@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import streamlit as st
 
-from client import (API_KEY, BASE_URL, CHAT_PATH, BedrockRouterError,
+from client import (BASE_URL, CHAT_PATH, BedrockRouterError,
                     call_model)
 from models import MODELS
 
@@ -36,21 +36,28 @@ st.caption("One endpoint · One API key · Any Bedrock model — "
 
 # ---------------------------------------------------------------- sidebar
 with st.sidebar:
-    st.header("API key")
-    ui_key = st.text_input(
-        "BedrockRouter API key", type="password", placeholder="sk_m11_…",
-        help="Create one at bedrockrouter.com/keys. The key lives only in "
-             "your session — it is never stored or logged by this app.",
-    ).strip()
-    active_key = ui_key or API_KEY   # UI key wins; .env is the fallback
-    if ui_key:
-        st.success(f"Using key from this session (…{active_key[-4:]})")
-    elif API_KEY:
-        st.info(f"Using key from .env (…{API_KEY[-4:]})")
+    st.header("🔑 API Configuration")
+    
+    # API Key input
+    api_key = st.text_input(
+        "Enter your bedrock-router API key here",
+        type="password",
+        placeholder="sk_m11_your_api_key_here",
+        help="Get your API key from: https://bedrockrouter.com/keys"
+    )
+    
+    # API Key validation and status
+    if api_key:
+        api_key = api_key.strip()
+        if api_key.startswith("sk_m11_"):
+            st.success(f"✅ API key connected (…{api_key[-4:]})")
+        else:
+            st.warning("⚠️ Invalid key format. Should start with 'sk_m11_'")
     else:
-        st.warning("Paste a key above to start.")
-
+        st.info("👆 Enter your BedrockRouter API key above to get started")
+    
     st.divider()
+    
     st.header("Settings")
     temperature = st.slider("Temperature", 0.0, 1.0, 0.7, 0.1,
                             help="Higher = more creative, lower = more focused")
@@ -65,6 +72,19 @@ with st.sidebar:
                "it never appears in the request payload.")
     st.caption("Model catalog: [bedrockrouter.com/models]"
                "(https://bedrockrouter.com/models)")
+    
+    # Instructions
+    st.divider()
+    st.subheader("📋 How to get API Key:")
+    st.markdown("""
+    1. Visit [bedrockrouter.com](https://bedrockrouter.com)
+    2. Sign up or Login to your account
+    3. Navigate to **API Keys** section  
+    4. Click **Create new API key**
+    5. Copy the key and paste it above 🔑
+    
+    **Note:** Your API key is only used in your browser session and is never stored.
+    """)
 
 
 def render_result(result: dict) -> None:
@@ -89,23 +109,31 @@ prompt = st.text_area(
 
 names = list(MODELS.keys())
 
+# Remove the blocking - let users see the interface
+
 # ================================================== MODE 1: single model
 if mode == "Single model":
     model_name = st.selectbox("Model", names)
     st.caption(f"Model ID that will be sent: `{MODELS[model_name]}`")
 
     if st.button("✨ Generate", type="primary", use_container_width=True):
-        with st.spinner(f"Calling {model_name}…"):
-            try:
-                st.session_state["single"] = (
-                    model_name,
-                    call_model(MODELS[model_name], prompt,
-                               temperature, max_tokens,
-                               api_key=active_key),
-                )
-            except BedrockRouterError as err:
-                st.session_state.pop("single", None)
-                st.error(str(err))
+        # Check for API key before making the call
+        if not api_key or not api_key.strip():
+            st.error("Please provide API key")
+        elif not api_key.startswith("sk_m11_"):
+            st.error("Invalid API key format")
+        else:
+            with st.spinner(f"Calling {model_name}…"):
+                try:
+                    st.session_state["single"] = (
+                        model_name,
+                        call_model(MODELS[model_name], prompt,
+                                   temperature, max_tokens,
+                                   api_key=api_key),
+                    )
+                except BedrockRouterError as err:
+                    st.session_state.pop("single", None)
+                    st.error(str(err))
 
     if "single" in st.session_state:
         name, result = st.session_state["single"]
@@ -125,25 +153,31 @@ else:
 
     if st.button("⚡ Run both with the SAME code", type="primary",
                  use_container_width=True):
+        
+        # Check for API key before making the calls
+        if not api_key or not api_key.strip():
+            st.error("Please provide API key")
+        elif not api_key.startswith("sk_m11_"):
+            st.error("Invalid API key format")
+        else:
+            def safe_call(model_id: str):
+                """Run one call; return (result, error) so one failure
+                doesn't hide the other model's answer."""
+                try:
+                    return call_model(model_id, prompt, temperature,
+                                      max_tokens, api_key=api_key), None
+                except BedrockRouterError as err:
+                    return None, str(err)
 
-        def safe_call(model_id: str):
-            """Run one call; return (result, error) so one failure
-            doesn't hide the other model's answer."""
-            try:
-                return call_model(model_id, prompt, temperature,
-                                  max_tokens, api_key=active_key), None
-            except BedrockRouterError as err:
-                return None, str(err)
-
-        with st.spinner(f"Calling {pick_a} and {pick_b} in parallel…"):
-            # Two threads = both requests fly at once. Same function,
-            # same endpoint, same key — only the model_id argument differs.
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                fut_a = pool.submit(safe_call, MODELS[pick_a])
-                fut_b = pool.submit(safe_call, MODELS[pick_b])
-                st.session_state["compare"] = (
-                    pick_a, pick_b, fut_a.result(), fut_b.result()
-                )
+            with st.spinner(f"Calling {pick_a} and {pick_b} in parallel…"):
+                # Two threads = both requests fly at once. Same function,
+                # same endpoint, same key — only the model_id argument differs.
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    fut_a = pool.submit(safe_call, MODELS[pick_a])
+                    fut_b = pool.submit(safe_call, MODELS[pick_b])
+                    st.session_state["compare"] = (
+                        pick_a, pick_b, fut_a.result(), fut_b.result()
+                    )
 
     if "compare" in st.session_state:
         name_a, name_b, (res_a, err_a), (res_b, err_b) = \

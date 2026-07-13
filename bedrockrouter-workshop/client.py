@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 
 load_dotenv()  # reads .env in the project root
 
-API_KEY = os.getenv("BEDROCKROUTER_API_KEY", "")
+# Remove API_KEY from environment - will be provided by user via UI
 BASE_URL = os.getenv("BEDROCKROUTER_BASE_URL", "").rstrip("/")
 CHAT_PATH = "/v1/chat/completions"   # OpenAI-compatible route
 
@@ -51,19 +51,20 @@ def call_model(model_id: str, prompt: str,
     """
     Call any Bedrock model through BedrockRouter.
 
-    Same endpoint. Same API key. Same code.
-    Different `model_id` -> different foundation model answers.
-
-    `api_key` (optional) overrides the .env key — used when the key is
-    typed in the UI (deployed mode). Note the key travels in the
-    Authorization HEADER, never inside the payload.
+    Same endpoint. Same code. Different `model_id` -> different foundation model answers.
+    API key MUST be provided by user through the frontend - no fallback to .env
     """
-    key = (api_key or API_KEY).strip()
-    if not key:
+    if not api_key or not api_key.strip():
         raise BedrockRouterError(
-            "No API key. Paste one in the sidebar, or copy .env.example "
-            "to .env. Create keys at https://bedrockrouter.com/keys"
+            "❌ No API key provided. Please enter your BedrockRouter API key in the sidebar. "
+            "Get your API key from: https://bedrockrouter.com/keys"
         )
+    
+    if not api_key.startswith("sk_m11_"):
+        raise BedrockRouterError(
+            "❌ Invalid API key format. BedrockRouter API keys should start with 'sk_m11_'"
+        )
+    
     if not BASE_URL:
         raise BedrockRouterError(
             "No base URL found. Copy .env.example to .env — the endpoint "
@@ -72,7 +73,7 @@ def call_model(model_id: str, prompt: str,
 
     payload = build_payload(model_id, prompt, temperature, max_tokens)
     headers = {
-        "Authorization": f"Bearer {key}",
+        "Authorization": f"Bearer {api_key.strip()}",
         "Content-Type": "application/json",
     }
 
@@ -84,7 +85,15 @@ def call_model(model_id: str, prompt: str,
         raise BedrockRouterError(f"Could not reach BedrockRouter: {exc}") from exc
     latency_s = round(time.perf_counter() - start, 2)
 
-    if resp.status_code != 200:
+    if resp.status_code == 401:
+        raise BedrockRouterError(
+            f"❌ Invalid API key. Please check your BedrockRouter API key and try again."
+        )
+    elif resp.status_code == 403:
+        raise BedrockRouterError(
+            f"❌ Access forbidden. Your API key may not have permission to use model '{model_id}'."
+        )
+    elif resp.status_code != 200:
         raise BedrockRouterError(
             f"{model_id} -> HTTP {resp.status_code}: {resp.text[:400]}"
         )
@@ -107,6 +116,16 @@ def call_model(model_id: str, prompt: str,
 
 
 if __name__ == "__main__":
-    # Quick smoke test without the UI:  python client.py
-    out = call_model("claude-haiku-4-5", "Say hello in five words.")
-    print(f"[{out['latency_s']}s] {out['text']}")
+    # Quick smoke test without the UI - requires API key as argument:  python client.py sk_m11_your_key_here
+    import sys
+    if len(sys.argv) < 2:
+        print("Usage: python client.py <api_key>")
+        print("Example: python client.py sk_m11_your_api_key_here")
+        sys.exit(1)
+    
+    test_api_key = sys.argv[1]
+    try:
+        out = call_model("claude-haiku-4-5", "Say hello in five words.", api_key=test_api_key)
+        print(f"✅ Success! [{out['latency_s']}s] {out['text']}")
+    except BedrockRouterError as e:
+        print(f"❌ Error: {e}")
