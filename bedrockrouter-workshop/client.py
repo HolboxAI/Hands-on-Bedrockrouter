@@ -46,17 +46,23 @@ def build_payload(model_id: str, prompt: str,
 
 
 def call_model(model_id: str, prompt: str,
-               temperature: float = 0.7, max_tokens: int = 1024) -> dict:
+               temperature: float = 0.7, max_tokens: int = 1024,
+               api_key: str = "") -> dict:
     """
     Call any Bedrock model through BedrockRouter.
 
     Same endpoint. Same API key. Same code.
     Different `model_id` -> different foundation model answers.
+
+    `api_key` (optional) overrides the .env key — used when the key is
+    typed in the UI (deployed mode). Note the key travels in the
+    Authorization HEADER, never inside the payload.
     """
-    if not API_KEY:
+    key = (api_key or API_KEY).strip()
+    if not key:
         raise BedrockRouterError(
-            "No API key found. Copy .env.example to .env and paste your "
-            "key from https://bedrockrouter.com/keys"
+            "No API key. Paste one in the sidebar, or copy .env.example "
+            "to .env. Create keys at https://bedrockrouter.com/keys"
         )
     if not BASE_URL:
         raise BedrockRouterError(
@@ -66,7 +72,7 @@ def call_model(model_id: str, prompt: str,
 
     payload = build_payload(model_id, prompt, temperature, max_tokens)
     headers = {
-        "Authorization": f"Bearer {API_KEY}",
+        "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
 

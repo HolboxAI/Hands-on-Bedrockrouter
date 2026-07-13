@@ -8,6 +8,7 @@ all models live in models.py (one dict). That separation IS the lesson.
 """
 
 import inspect
+import sys
 from concurrent.futures import ThreadPoolExecutor
 
 import streamlit as st
@@ -15,6 +16,16 @@ import streamlit as st
 from client import (API_KEY, BASE_URL, CHAT_PATH, BedrockRouterError,
                     call_model)
 from models import MODELS
+
+# Guard: `python app.py` starts Streamlit in "bare mode" and floods the
+# terminal with ScriptRunContext warnings. Catch it early instead.
+try:
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+    if get_script_run_ctx(suppress_warning=True) is None:
+        sys.exit("\nThis is a Streamlit app — start it with:\n\n"
+                 "    streamlit run app.py\n")
+except ImportError:
+    pass  # internal API moved in some future version — never block the app
 
 st.set_page_config(page_title="BedrockRouter Playground",
                    page_icon="🔀", layout="wide")
@@ -25,6 +36,21 @@ st.caption("One endpoint · One API key · Any Bedrock model — "
 
 # ---------------------------------------------------------------- sidebar
 with st.sidebar:
+    st.header("API key")
+    ui_key = st.text_input(
+        "BedrockRouter API key", type="password", placeholder="sk_m11_…",
+        help="Create one at bedrockrouter.com/keys. The key lives only in "
+             "your session — it is never stored or logged by this app.",
+    ).strip()
+    active_key = ui_key or API_KEY   # UI key wins; .env is the fallback
+    if ui_key:
+        st.success(f"Using key from this session (…{active_key[-4:]})")
+    elif API_KEY:
+        st.info(f"Using key from .env (…{API_KEY[-4:]})")
+    else:
+        st.warning("Paste a key above to start.")
+
+    st.divider()
     st.header("Settings")
     temperature = st.slider("Temperature", 0.0, 1.0, 0.7, 0.1,
                             help="Higher = more creative, lower = more focused")
@@ -35,11 +61,8 @@ with st.sidebar:
     st.caption("Every model below is called through this single URL:")
     st.code(f"POST {BASE_URL or '<set BEDROCKROUTER_BASE_URL>'}{CHAT_PATH}",
             language=None, wrap_lines=True)
-    if API_KEY:
-        st.success(f"API key loaded (…{API_KEY[-4:]})")
-    else:
-        st.error("No API key. Copy `.env.example` → `.env` and paste "
-                 "your key, then restart the app.")
+    st.caption("The key is sent in the `Authorization` header — "
+               "it never appears in the request payload.")
     st.caption("Model catalog: [bedrockrouter.com/models]"
                "(https://bedrockrouter.com/models)")
 
@@ -77,7 +100,8 @@ if mode == "Single model":
                 st.session_state["single"] = (
                     model_name,
                     call_model(MODELS[model_name], prompt,
-                               temperature, max_tokens),
+                               temperature, max_tokens,
+                               api_key=active_key),
                 )
             except BedrockRouterError as err:
                 st.session_state.pop("single", None)
@@ -106,8 +130,8 @@ else:
             """Run one call; return (result, error) so one failure
             doesn't hide the other model's answer."""
             try:
-                return call_model(model_id, prompt,
-                                  temperature, max_tokens), None
+                return call_model(model_id, prompt, temperature,
+                                  max_tokens, api_key=active_key), None
             except BedrockRouterError as err:
                 return None, str(err)
 
