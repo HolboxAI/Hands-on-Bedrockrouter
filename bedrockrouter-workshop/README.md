@@ -13,7 +13,7 @@ A hands-on Streamlit app that proves one idea:
 | `client.py` | ONE function that calls the API | ❌ Never |
 | `app.py` | Streamlit UI | ❌ Never |
 
-## Setup (≈5 minutes)
+## Setup (≈3 minutes)
 
 ```bash
 # 1. Create a virtual env (recommended)
@@ -23,36 +23,37 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Add your API key
-cp .env.example .env               # Windows: copy .env.example .env
-#    → open .env and paste your key from https://bedrockrouter.com/keys
-
-# 4. Run
+# 3. Run the app
 streamlit run app.py
+
+# 4. Enter your API key in the sidebar when the app opens
+#    → Get your key from https://bedrockrouter.com/keys
 ```
 
-No key yet? Instructor will share one, or create your own at
-**bedrockrouter.com → API Keys → Create key**.
+No key yet? Create your own at **bedrockrouter.com → API Keys → Create key**.
+The app will prompt you to enter it in the sidebar - no file editing needed!
 
 ## What to do in the app
 
-1. **Single model** — type a prompt, pick a model, Generate.
+1. **Enter your API key** — paste your BedrockRouter API key in the sidebar
+2. **Single model** — type a prompt, pick a model, Generate.
    Open *"Exact request that was sent"*, switch model, run again,
    and spot the one line that changed.
-2. **Compare two models** — same prompt goes to two models **in parallel**.
+3. **Compare two models** — same prompt goes to two models **in parallel**.
    The app diffs both request payloads live and shows the only
    differing field: `model`. Watch the latency/token metrics too —
    try *Nova Micro* vs *Claude Sonnet 4.6*.
 
-## Suggested session flow (~50 min)
+## Suggested session flow (~45 min)
 
 | Time | Activity |
 |---|---|
 | 5 min | Walk through the 3-file structure — where would model logic *usually* leak? |
-| 10 min | Everyone: setup + `.env` + first Generate |
+| 5 min | Everyone: setup + run `streamlit run app.py` |
+| 5 min | Enter API key in sidebar + first Generate |
 | 15 min | Free experimentation: same prompt across 4+ models; compare tone, speed, tokens |
 | 10 min | Compare mode + payload diff — the "only `model` changed" proof |
-| 10 min | Challenges below |
+| 5 min | Challenges below |
 
 ## Challenges (fast finishers)
 
@@ -104,7 +105,7 @@ curl -s $BEDROCKROUTER_BASE_URL/v1/chat/completions \
 
 | Symptom | Fix |
 |---|---|
-| "No API key found" | `.env` missing or app started before you created it — restart Streamlit |
+| "Please provide API key" | Enter your API key in the sidebar — get one at bedrockrouter.com/keys |
 | HTTP 401 / 403 | Key typo, or key was revoked — check bedrockrouter.com/keys |
 | HTTP 404 | `BEDROCKROUTER_BASE_URL` edited/truncated — re-copy from `.env.example` |
 | Model error | ID typo in `models.py` — verify against bedrockrouter.com/models |
